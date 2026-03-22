@@ -5,46 +5,57 @@ import {
 import * as dotenv from 'dotenv';
 import { supabase } from './supabase';
 
-// Load .env only if it exists (for local development)
+// 1. Setup Environment
 dotenv.config();
+const token = process.env.DISCORD_TOKEN;
+const clientId = process.env.CLIENT_ID;
 
+// 2. Initialize Client with ALL required intents
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent, 
+        GatewayIntentBits.GuildMembers, // CRITICAL: Required for matching users
     ],
 });
 
-// --- REGISTER SLASH COMMANDS ---
+// 3. PRIORITY LOGIN (Login immediately to check connection)
+console.log('--- SYSTEM STARTUP ---');
+if (!token) {
+    console.error("❌ CRITICAL: DISCORD_TOKEN is missing in Render Settings!");
+} else {
+    console.log('⏳ Attempting Discord login...');
+    client.login(token).catch(err => {
+        console.error("❌ DISCORD LOGIN ERROR:", err.message);
+    });
+}
+
+client.once('ready', () => {
+    console.log(`🚀 SUCCESS: ${client.user?.tag} is online and connected to Discord!`);
+});
+
+// 4. REGISTER SLASH COMMANDS
 const commands = [
     new SlashCommandBuilder().setName('setup').setDescription('Admin: Creates the chat join button.'),
     new SlashCommandBuilder().setName('leave').setDescription('Leave your current chat or queue.')
 ].map(command => command.toJSON());
 
-const token = process.env.DISCORD_TOKEN;
-const clientId = process.env.CLIENT_ID;
-
-// Use the environment variables we set in the Render Dashboard
 const rest = new REST({ version: '10' }).setToken(token!);
 
 (async () => {
     try {
-        console.log('⏳ Attempting to refresh application (/) commands...');
-        if (!clientId) throw new Error("CLIENT_ID is missing from environment variables!");
+        console.log('⏳ Syncing Slash Commands...');
+        if (!clientId) throw new Error("CLIENT_ID is missing!");
         
         await rest.put(Routes.applicationCommands(clientId), { body: commands });
-        console.log('✅ Successfully reloaded application (/) commands.');
+        console.log('✅ Commands synced successfully.');
     } catch (error: any) {
-        console.error('❌ COMMAND REGISTRATION ERROR:', error.message);
+        console.error('❌ COMMAND SYNC ERROR:', error.message);
     }
 })();
 
-client.once('ready', () => {
-    console.log(`🚀 ${client.user?.tag} is online and ready for Shared Rooms!`);
-});
-
-// --- HANDLE BUTTONS AND COMMANDS ---
+// 5. BOT LOGIC (Interactions)
 client.on('interactionCreate', async (interaction: Interaction) => {
     
     // /setup Command
@@ -118,16 +129,7 @@ client.on('interactionCreate', async (interaction: Interaction) => {
     }
 });
 
-// LOGIN WITH DEBUG ERROR CATCHING
-if (!token) {
-    console.error("❌ CRITICAL ERROR: DISCORD_TOKEN is not defined in Environment Variables!");
-} else {
-    client.login(token).catch(err => {
-        console.error("❌ DISCORD LOGIN ERROR:", err.message);
-    });
-}
-
-// --- ANTI-SLEEP WEB SERVER ---
+// 6. ANTI-SLEEP WEB SERVER
 const express = require('express');
 const server = express();
 server.get('/', (req: any, res: any) => res.send('Matchbot is alive!'));
