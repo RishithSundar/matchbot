@@ -1,40 +1,48 @@
-import { Client, GatewayIntentBits } from 'discord.js';
+import * as https from 'https';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 const token = process.env.DISCORD_TOKEN?.trim();
 
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent, 
-        GatewayIntentBits.GuildMembers, 
-    ],
-});
-
-console.log('--- 🛡️ DIAGNOSTIC MODE ---');
+console.log('--- 🧪 SURGICAL TOKEN TEST ---');
 
 if (!token) {
-    console.error("❌ ERROR: No token found in Render Dashboard!");
+    console.log("❌ ERROR: No token found in Render environment.");
 } else {
-    console.log(`⏳ Step 1: Requesting connection...`);
+    console.log(`📡 Sending direct request to Discord API...`);
 
-    client.login(token)
-        .then(() => {
-            console.log(`🚀 STEP 2 SUCCESS: ${client.user?.tag} IS GREEN!`);
-        })
-        .catch(err => {
-            console.error("❌ STEP 2 FAILED:", err.message);
+    const options = {
+        hostname: 'discord.com',
+        path: '/api/v10/users/@me',
+        method: 'GET',
+        headers: { 'Authorization': `Bot ${token}` }
+    };
+
+    const req = https.request(options, (res) => {
+        console.log(`📊 Response Status: ${res.statusCode}`);
+        
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => {
+            if (res.statusCode === 200) {
+                const bot = JSON.parse(data);
+                console.log(`🚀 SUCCESS! Token is valid.`);
+                console.log(`🤖 Bot Name: ${bot.username}#${bot.discriminator}`);
+                console.log(`✅ If you see this, the token is 100% correct.`);
+            } else if (res.statusCode === 401) {
+                console.log(`❌ ERROR 401: This token is INVALID or RESET.`);
+            } else {
+                console.log(`❓ UNKNOWN ERROR: ${data}`);
+            }
         });
+    });
+
+    req.on('error', (e) => console.error(`❌ NETWORK ERROR: ${e.message}`));
+    req.end();
 }
 
-client.once('ready', () => {
-    console.log(`✅ DISCORD HAS ACCEPTED THE BOT.`);
-});
-
-// Minimal Web Server to keep Render happy
+// Keep server alive for Render
 const express = require('express');
 const server = express();
-server.get('/', (req: any, res: any) => res.send('Diagnostics Running...'));
-server.listen(process.env.PORT || 10000, () => console.log('🌐 Web server port open.'));
+server.get('/', (req: any, res: any) => res.send('Testing...'));
+server.listen(process.env.PORT || 10000);
