@@ -22,20 +22,24 @@ const commands = [
     new SlashCommandBuilder().setName('leave').setDescription('Leave your current chat or queue.')
 ].map(command => command.toJSON());
 
+const token = process.env.DISCORD_TOKEN;
+const clientId = process.env.CLIENT_ID;
+
 // Use the environment variables we set in the Render Dashboard
-const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
+const rest = new REST({ version: '10' }).setToken(token!);
 
 (async () => {
     try {
-        console.log('Started refreshing application (/) commands.');
-        await rest.put(Routes.applicationCommands(process.env.CLIENT_ID!), { body: commands });
-        console.log('Successfully reloaded application (/) commands.');
-    } catch (error) {
-        console.error('Error refreshing commands:', error);
+        console.log('⏳ Attempting to refresh application (/) commands...');
+        if (!clientId) throw new Error("CLIENT_ID is missing from environment variables!");
+        
+        await rest.put(Routes.applicationCommands(clientId), { body: commands });
+        console.log('✅ Successfully reloaded application (/) commands.');
+    } catch (error: any) {
+        console.error('❌ COMMAND REGISTRATION ERROR:', error.message);
     }
 })();
 
-// CRITICAL FIX: The event name must be 'ready', not 'clientReady'
 client.once('ready', () => {
     console.log(`🚀 ${client.user?.tag} is online and ready for Shared Rooms!`);
 });
@@ -114,8 +118,14 @@ client.on('interactionCreate', async (interaction: Interaction) => {
     }
 });
 
-// Login using the token from Render Environment Variables
-client.login(process.env.DISCORD_TOKEN);
+// LOGIN WITH DEBUG ERROR CATCHING
+if (!token) {
+    console.error("❌ CRITICAL ERROR: DISCORD_TOKEN is not defined in Environment Variables!");
+} else {
+    client.login(token).catch(err => {
+        console.error("❌ DISCORD LOGIN ERROR:", err.message);
+    });
+}
 
 // --- ANTI-SLEEP WEB SERVER ---
 const express = require('express');
