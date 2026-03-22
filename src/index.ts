@@ -1,38 +1,38 @@
 import { 
     Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, 
-    ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, TextChannel, ThreadChannel, Interaction
+    ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, TextChannel, ThreadChannel, Interaction 
 } from 'discord.js';
 import * as dotenv from 'dotenv';
 import { supabase } from './supabase';
 
-// 1. Setup Environment
+// 1. Initialize Environment
 dotenv.config();
-const token = process.env.DISCORD_TOKEN;
-const clientId = process.env.CLIENT_ID;
+const token = process.env.DISCORD_TOKEN?.trim();
+const clientId = process.env.CLIENT_ID?.trim();
 
-// 2. Initialize Client with ALL required intents
+// 2. Initialize Discord Client with all required Intents
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent, 
-        GatewayIntentBits.GuildMembers, // CRITICAL: Required for matching users
+        GatewayIntentBits.GuildMembers, // Required to add users to threads
     ],
 });
 
-// 3. PRIORITY LOGIN (Login immediately to check connection)
-console.log('--- SYSTEM STARTUP ---');
+// 3. PRIORITY LOGIN (Connect to Discord first)
+console.log('--- MATCHBOT STARTUP ---');
 if (!token) {
-    console.error("❌ CRITICAL: DISCORD_TOKEN is missing in Render Settings!");
+    console.error("❌ CRITICAL: DISCORD_TOKEN is missing in Environment Variables!");
 } else {
-    console.log('⏳ Attempting Discord login...');
+    console.log(`⏳ Attempting Login... (Token length: ${token.length})`);
     client.login(token).catch(err => {
         console.error("❌ DISCORD LOGIN ERROR:", err.message);
     });
 }
 
 client.once('ready', () => {
-    console.log(`🚀 SUCCESS: ${client.user?.tag} is online and connected to Discord!`);
+    console.log(`🚀 SUCCESS: ${client.user?.tag} is online and connected!`);
 });
 
 // 4. REGISTER SLASH COMMANDS
@@ -45,17 +45,16 @@ const rest = new REST({ version: '10' }).setToken(token!);
 
 (async () => {
     try {
-        console.log('⏳ Syncing Slash Commands...');
         if (!clientId) throw new Error("CLIENT_ID is missing!");
-        
+        console.log('⏳ Syncing Slash Commands...');
         await rest.put(Routes.applicationCommands(clientId), { body: commands });
         console.log('✅ Commands synced successfully.');
     } catch (error: any) {
-        console.error('❌ COMMAND SYNC ERROR:', error.message);
+        console.error('❌ COMMAND REGISTRATION ERROR:', error.message);
     }
 })();
 
-// 5. BOT LOGIC (Interactions)
+// 5. BOT INTERACTION LOGIC
 client.on('interactionCreate', async (interaction: Interaction) => {
     
     // /setup Command
@@ -93,7 +92,7 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         return interaction.editReply('You are not in a chat!');
     }
 
-    // "Chat with random person" Button
+    // "Chat with random person" Button Logic
     if (interaction.isButton() && interaction.customId === 'join_queue') {
         await interaction.deferReply({ ephemeral: true });
         const userId = interaction.user.id;
