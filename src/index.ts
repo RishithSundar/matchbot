@@ -5,6 +5,7 @@ import {
 import * as dotenv from 'dotenv';
 import { supabase } from './supabase';
 
+// Load .env only if it exists (for local development)
 dotenv.config();
 
 const client = new Client({
@@ -21,16 +22,21 @@ const commands = [
     new SlashCommandBuilder().setName('leave').setDescription('Leave your current chat or queue.')
 ].map(command => command.toJSON());
 
+// Use the environment variables we set in the Render Dashboard
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
+
 (async () => {
     try {
+        console.log('Started refreshing application (/) commands.');
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID!), { body: commands });
+        console.log('Successfully reloaded application (/) commands.');
     } catch (error) {
-        console.error(error);
+        console.error('Error refreshing commands:', error);
     }
 })();
 
-client.once('clientReady', () => {
+// CRITICAL FIX: The event name must be 'ready', not 'clientReady'
+client.once('ready', () => {
     console.log(`🚀 ${client.user?.tag} is online and ready for Shared Rooms!`);
 });
 
@@ -51,27 +57,22 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         await interaction.deferReply({ ephemeral: true });
         const userId = interaction.user.id;
 
-        // Check if waiting in queue
         const { data: queueData } = await supabase.from('queue').select('*').eq('discord_id', userId).single();
         if (queueData) {
             await supabase.from('queue').delete().eq('discord_id', userId);
             const thread = client.channels.cache.get(queueData.thread_id) as ThreadChannel;
-            if (thread) await thread.delete();
+            if (thread) await thread.delete().catch(() => {});
             return interaction.editReply('You left the queue.');
         }
 
-        // Check if in active chat
         const { data: chatData } = await supabase.from('active_chats').select('*').or(`user1_id.eq.${userId},user2_id.eq.${userId}`).single();
         if (chatData) {
             await supabase.from('active_chats').delete().eq('id', chatData.id);
-            
-            // Get the shared thread and delete it for everyone
             const sharedThread = client.channels.cache.get(chatData.user1_thread_id) as ThreadChannel;
             if (sharedThread) {
                 await sharedThread.send('🔴 **A user has left the chat. Closing room in 5 seconds...**');
-                setTimeout(() => sharedThread.delete().catch(console.error), 5000);
+                setTimeout(() => sharedThread.delete().catch(() => {}), 5000);
             }
-
             return interaction.editReply('You left the chat.');
         }
         return interaction.editReply('You are not in a chat!');
@@ -88,35 +89,24 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         
         if (inQueue || inChat) return interaction.editReply('You are already in a chat or queue! Use `/leave` to exit.');
 
-        // Matchmaking
         const { data: waitingUser } = await supabase.from('queue').select('*').limit(1).maybeSingle();
 
         if (waitingUser) {
-            // MATCH FOUND! Join the existing thread instead of making a new one.
             await supabase.from('queue').delete().eq('discord_id', waitingUser.discord_id);
-            
             const sharedThread = client.channels.cache.get(waitingUser.thread_id) as ThreadChannel;
             
             if (sharedThread) {
-                // Add the new user to the thread
                 await sharedThread.members.add(userId);
-                
-                // Save to database (both users share the same thread ID)
                 await supabase.from('active_chats').insert({
                     user1_id: waitingUser.discord_id, user1_thread_id: sharedThread.id,
                     user2_id: userId, user2_thread_id: sharedThread.id
                 });
-
-                // Send the exact introduction message from your screenshot
                 await sharedThread.send(`Hey 👋 <@${waitingUser.discord_id}> and <@${userId}> you've been matched! Start chatting here. 💬`);
-                
                 return interaction.editReply(`Match found! Jump in: <#${sharedThread.id}>`);
             }
         } else {
-            // NO MATCH YET - Create the shared thread and wait
             const thread = await channel.threads.create({ name: `Your Chat`, type: ChannelType.PrivateThread });
             await thread.members.add(userId);
-            
             await supabase.from('queue').insert({ discord_id: userId, thread_id: thread.id });
             await thread.send(`Hey 👋 <@${userId}> please wait, looking for a match... 👀`);
             return interaction.editReply(`Joined queue! Wait here: <#${thread.id}>`);
@@ -124,10 +114,11 @@ client.on('interactionCreate', async (interaction: Interaction) => {
     }
 });
 
+// Login using the token from Render Environment Variables
 client.login(process.env.DISCORD_TOKEN);
 
 // --- ANTI-SLEEP WEB SERVER ---
 const express = require('express');
-const app = express();
-app.get('/', (req: any, res: any) => res.send('Matchbot is alive!'));
-app.listen(process.env.PORT || 3000, () => console.log('🌐 Web server is running!'));
+const server = express();
+server.get('/', (req: any, res: any) => res.send('Matchbot is alive!'));
+server.listen(process.env.PORT || 3000, () => console.log('🌐 Web server is running!'));
